@@ -16,6 +16,7 @@ JSON_SUFFIXES = [".supplemental-metadata.json", ".suppl.json"]
 def rename_file(f_data, new_name):
     # rename media file
     orig_name = f_data['path'].name
+    print("new_name: ", new_name)
     new_path = f_data['path'].with_name(new_name)
     f_data['path'] = f_data['path'].rename(new_path)
 
@@ -36,7 +37,7 @@ def fix_wrong_extension(f_data):
         expected_ext = f".{kind}"
         actual_ext = f_path.suffix.lower()
         if expected_ext != actual_ext:
-            new_name = f_path.with_suffix(expected_ext)
+            new_name = f_path.with_suffix(expected_ext).name
             rename_file(f_data, new_name)
 
 
@@ -99,9 +100,10 @@ def copy_to_output(f_data, output_dir):
     shutil.copy2(f_data['path'], dest_path)
 
     # copy json path
-    dest_json_path = output_dir / "metadata" / f_data["json_path"]
+    dest_json_path = output_dir / "metadata" / f_data["json_path"].name
     if dest_json_path.exists():
         raise Exception(f"Destination JSON path already exists: {dest_path}")
+    print("copy json", f_data['json_path'], dest_json_path)
     shutil.copy2(f_data['json_path'], dest_json_path)
 
 
@@ -115,6 +117,7 @@ def process_media_file(f_data, output_dir):
 def main(input_dir, output_dir):
     input_dir = Path(input_dir).resolve()
     output_dir = Path(output_dir).resolve()
+    os.makedirs(output_dir / "metadata", exist_ok=True)
 
     logger.info(f"Scanning folders under: {input_dir}\n")
     media_files = scan_files(input_dir)
