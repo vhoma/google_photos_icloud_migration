@@ -2,107 +2,135 @@ import os
 import shutil
 import subprocess
 import imghdr
-import mimetypes
+import json
+from datetime import datetime
 from pathlib import Path
-from collections import defaultdict
+
+from logger import get_logger
+logger = get_logger()
 
 MEDIA_EXTS = {'.jpg', '.jpeg', '.png', '.heic', '.mov', '.mp4'}
 JSON_SUFFIXES = [".supplemental-metadata.json", ".suppl.json"]
 
-def fix_wrong_extension(media_path):
-    kind = imghdr.what(media_path)
+
+def rename_file(f_data, new_name):
+    # rename media file
+    orig_name = f_data['path'].name
+    new_path = f_data['path'].with_name(new_name)
+    f_data['path'] = f_data['path'].rename(new_path)
+
+    # rename json file
+    if f_data.get('json_path'):
+        new_json_path = f_data['json_path'].with_name(
+            f_data['json_path'].name.replace(orig_name, new_name)
+        )
+        f_data['json_path'] = f_data['json_path'].rename(new_json_path)
+
+    logger.info(f"Renamed {f_data['path']} → {new_path.name}")
+
+
+def fix_wrong_extension(f_data):
+    f_path = f_data['path']
+    kind = imghdr.what(f_path)
     if kind:
         expected_ext = f".{kind}"
-        actual_ext = media_path.suffix.lower()
+        actual_ext = f_path.suffix.lower()
         if expected_ext != actual_ext:
-            new_path = media_path.with_suffix(expected_ext)
-            media_path.rename(new_path)
-            print(f"Renamed {media_path.name} → {new_path.name}")
-            return new_path, True
-    return media_path, False
+            new_name = f_path.with_suffix(expected_ext)
+            rename_file(f_data, new_name)
+
 
 def scan_files(input_dir):
     media_files = {}
-    json_files = defaultdict(list)
+    json_files = {}
 
+    # walk through all files
     for root, _, files in os.walk(input_dir):
         for file in files:
             path = Path(root) / file
             if path.suffix.lower() in MEDIA_EXTS:
-                media_files[path.name] = path
+                media_files[path.name] = {"path": path}
             else:
                 for suffix in JSON_SUFFIXES:
                     if file.endswith(suffix):
                         base_name = file.replace(suffix, '')
-                        json_files[base_name].append(path)
+                        json_files[base_name] = path
                         break
 
-    return media_files, json_files
+    # match json files with media files
+    res = []
+    for media_name in media_files:
+        media_file_data = media_files[media_name]
+        media_file_data["name"] = media_name
+        if media_name in json_files:
+            media_file_data["json_path"] = json_files[media_name]
+        res.append(media_file_data)
+
+    return res
+
 
 def apply_json_metadata(media_path, json_path):
+    if not json_path:
+        raise Exception(f"No metadata to apply to {media_path}")
+
+    # read metadata file
+    with open(json_path, 'r') as f:
+        metadata = json.load(f)
+    photo_taken_time = int(metadata['photoTakenTime']['timestamp'])
+    date_time_original = datetime.fromtimestamp(photo_taken_time).strftime("%Y:%m:%d %H:%M:%S")
+
     try:
         subprocess.run([
             "exiftool",
             f"-json={json_path}",
+            f'-DateTimeOriginal="{date_time_original}"',
             "-overwrite_original",
             str(media_path)
         ], check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Failed to update metadata for {media_path}: {e}")
+        raise Exception(f"Failed to update metadata for {media_path}: {e}")
 
-def copy_to_output(media_path, output_dir):
-    dest_path = output_dir / media_path.name
 
-    # Handle name collisions
-    counter = 1
-    while dest_path.exists():
-        stem = media_path.stem
-        suffix = media_path.suffix
-        dest_path = output_dir / f"{stem}_{counter}{suffix}"
-        counter += 1
+def copy_to_output(f_data, output_dir):
+    # copy media path
+    dest_path = output_dir / f_data['path'].name
+    if dest_path.exists():
+        raise Exception(f"Destination path already exists: {dest_path}")
+    shutil.copy2(f_data['path'], dest_path)
 
-    shutil.copy2(media_path, dest_path)
+    # copy json path
+    dest_json_path = output_dir / "metadata" / f_data["json_path"]
+    if dest_json_path.exists():
+        raise Exception(f"Destination JSON path already exists: {dest_path}")
+    shutil.copy2(f_data['json_path'], dest_json_path)
+
+
+def process_media_file(f_data, output_dir):
+    fix_wrong_extension(f_data)
+    apply_json_metadata(f_data['path'], f_data.get('json_path'))
+    copy_to_output(f_data, output_dir)
+    logger.info(f"Done with file {f_data['path']}")
+
 
 def main(input_dir, output_dir):
     input_dir = Path(input_dir).resolve()
     output_dir = Path(output_dir).resolve()
-    print(f"Scanning folders under: {input_dir}\n")
 
-    media_files, json_files = scan_files(input_dir)
+    logger.info(f"Scanning folders under: {input_dir}\n")
+    media_files = scan_files(input_dir)
 
-    for name, media_path in media_files.items():
-        json_path = None
-        original_name = media_path.name
-        media_path, renamed = fix_wrong_extension(media_path)
-        name = media_path.name
+    # process files one by one
+    files_count = len(media_files)
+    counter = 0
+    for f_data in media_files:
+        counter += 1
+        logger.info(f"Processing {counter} of {files_count} files...")
+        process_media_file(f_data, output_dir)
 
-        # If we renamed the media file, also rename the corresponding JSON if found
-        if renamed:
-            for suffix in JSON_SUFFIXES:
-                json_old_name = original_name + suffix
-                if json_old_name in json_files:
-                    old_json_path = json_files[json_old_name][0]
-                    new_json_path = old_json_path.with_name(name + suffix)
-                    old_json_path.rename(new_json_path)
-                    print(f"Renamed JSON {old_json_path.name} → {new_json_path.name}")
-
-                    # Update index
-                    json_files[name] = [new_json_path]
-                    del json_files[json_old_name]
-                    break
-
-        if name in json_files:
-            json_path = json_files[name][0]
-            apply_json_metadata(media_path, json_path)
-        else:
-            print(f"No JSON metadata found for: {name}")
-
-
-        copy_to_output(media_path, output_dir)
 
 if __name__ == "__main__":
     import sys
     if len(sys.argv) != 3:
-        print("Usage: python3 apply_metadata.py <input_dir> <output_dir>")
+        logger.info("Usage: python3 apply_metadata.py <input_dir> <output_dir>")
     else:
         main(sys.argv[1], sys.argv[2])
