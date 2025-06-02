@@ -36,7 +36,7 @@ JSON_SUFFIXES = [
     '..json',
     '.json',
 ]
-DEFAULT_JSON_SUF = '.suppl.json',
+DEFAULT_JSON_SUF = '.suppl.json'
 
 
 def get_json_name_from_media_name(name):
@@ -89,11 +89,14 @@ def get_name_from_json_path(json_path):
         clean_name = json_path.name.replace(ugly_suffix, "")
         for suf in JSON_SUFFIXES:
             clean_name = clean_name.replace(suf, "")
-        idx = clean_name.rfind('.')
-        if idx != -1:
-            return clean_name[:idx] + ugly_suffix
+        if len(clean_name) > 46:
+            return clean_name
         else:
-            return clean_name + ugly_suffix  # not found, append at end
+            idx = clean_name.rfind('.')
+            if idx != -1:
+                return clean_name[:idx] + ugly_suffix
+            else:
+                return clean_name + ugly_suffix  # not found, append at end
     else:
         name = json_path.name
         for suf in JSON_SUFFIXES:
@@ -124,6 +127,7 @@ def scan_files(input_dir, output_dir):
                     media_files[year] = {}
                 if path.stem not in media_files[year]:
                     media_files[year][path.stem] = {"path": path}
+                    # print(f"media:{year}:{path.stem}:{path}")
                 else:
                     # raise Exception(f"Duplicate media file for {path}")
                     duplicates_path = output_dir / "duplicates"
@@ -136,23 +140,30 @@ def scan_files(input_dir, output_dir):
                     json_files[year] = {}
                 if media_name not in json_files[year]:
                     json_files[year][media_name] = path
+                    # print(f"json:{year}:{media_name}:{path}")
                 else:
                     # raise Exception(f"Duplicate JSON file for {media_name}: {path}")
                     duplicates_path = output_dir / "duplicates" / "metadata"
                     os.makedirs(duplicates_path, exist_ok=True)
                     shutil.copy2(path, duplicates_path / f"{year}_{path.name}")
+                    
+    # raise Exception("DEBUGGING EXIT HERE")
 
     # match json files with media files
     res = []
     for year in media_files:
         for media_name in media_files[year]:
             media_file_data = media_files[year][media_name]
-            media_name_match = media_file_data['path'].name[:46]
+            if len(media_file_data['path'].name) > 46:
+                media_name_match = media_file_data['path'].name[:46]
+            else:
+                media_name_match = media_name
             try:
                 media_file_data["json_path"] = json_files[year][media_name_match]
                 del json_files[year][media_name]
             except KeyError:
-                raise KeyError(f"No metadata to apply to {media_file_data['path']}")
+                raise KeyError(f"No metadata to apply to {year}:{media_name_match} {media_file_data['path']}")
+                #print(f">>>No metadata to apply to {media_file_data['path']}")
             res.append(media_file_data)
     return res
 
