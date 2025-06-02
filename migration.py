@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import imghdr
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -13,17 +14,28 @@ MEDIA_EXTS = {'.jpg', '.jpeg', '.png', '.heic', '.mov', '.mp4'}
 JSON_SUFFIXES = [".supplemental-metadata.json", ".suppl.json"]
 
 
+def get_json_name_from_media_name(name):
+    # option 1: /some/path/<media_name>.supplemental-metadata.json ; return <media_name>
+    # option 2: /some/path/<media_name>.suppl.json ; return <media_name>
+    # option 3: /some/path/<media_name>.supplemental-metadata(2).json ; return <media_name>(2).<ext>
+    ugly_suffix_list = re.findall(r'[^()]*(\([0-9]+\))\..+', name)
+    if ugly_suffix_list:
+        ugly_suffix = ugly_suffix_list[0]
+        clean_name = name.replace(ugly_suffix, "")
+        return clean_name + f".suppl{ugly_suffix}.json"
+    else:
+        return name + JSON_SUFFIXES[-1]
+
+
 def rename_file(f_data, new_name):
     # rename media file
-    orig_name = f_data['path'].name
-    print("new_name: ", new_name)
     new_path = f_data['path'].with_name(new_name)
     f_data['path'] = f_data['path'].rename(new_path)
 
     # rename json file
     if f_data.get('json_path'):
         new_json_path = f_data['json_path'].with_name(
-            f_data['json_path'].name.replace(orig_name, new_name)
+            get_json_name_from_media_name(new_name)
         )
         f_data['json_path'] = f_data['json_path'].rename(new_json_path)
 
@@ -41,6 +53,29 @@ def fix_wrong_extension(f_data):
             rename_file(f_data, new_name)
 
 
+def get_name_from_json_path(json_path):
+    # will return original file name without extension suffix
+    # option 1: /some/path/<media_name>.supplemental-metadata.json ; return <media_name>
+    # option 2: /some/path/<media_name>.suppl.json ; return <media_name>
+    # option 3: /some/path/<media_name>.supplemental-metadata(2).json ; return <media_name>(2)
+    ugly_suffix_list = re.findall(r'[^()]*(\([0-9]+\)).json', str(json_path))
+    if ugly_suffix_list:
+        ugly_suffix = ugly_suffix_list[0]
+        clean_name = json_path.name.replace(ugly_suffix, "")
+        for suf in JSON_SUFFIXES:
+            clean_name = clean_name.replace(suf, "")
+        idx = clean_name.rfind('.')
+        if idx != -1:
+            return clean_name[:idx] + ugly_suffix
+        else:
+            return clean_name + ugly_suffix  # not found, append at end
+    else:
+        name = json_path.name
+        for suf in JSON_SUFFIXES:
+            name = name.replace(suf, "")
+        return name[:name.rfind('.')]
+
+
 def scan_files(input_dir):
     media_files = {}
     json_files = {}
@@ -50,19 +85,15 @@ def scan_files(input_dir):
         for file in files:
             path = Path(root) / file
             if path.suffix.lower() in MEDIA_EXTS:
-                media_files[path.name] = {"path": path}
-            else:
-                for suffix in JSON_SUFFIXES:
-                    if file.endswith(suffix):
-                        base_name = file.replace(suffix, '')
-                        json_files[base_name] = path
-                        break
+                media_files[path.stem] = {"path": path}
+            elif path.suffix.lower() == ".json":
+                media_name = get_name_from_json_path(path)
+                json_files[media_name] = path
 
     # match json files with media files
     res = []
     for media_name in media_files:
         media_file_data = media_files[media_name]
-        media_file_data["name"] = media_name
         if media_name in json_files:
             media_file_data["json_path"] = json_files[media_name]
         res.append(media_file_data)
@@ -103,7 +134,7 @@ def copy_to_output(f_data, output_dir):
     dest_json_path = output_dir / "metadata" / f_data["json_path"].name
     if dest_json_path.exists():
         raise Exception(f"Destination JSON path already exists: {dest_path}")
-    print("copy json", f_data['json_path'], dest_json_path)
+    logger.debug(f"copy json {f_data['json_path']} {dest_json_path}")
     shutil.copy2(f_data['json_path'], dest_json_path)
 
 
