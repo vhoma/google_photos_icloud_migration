@@ -110,7 +110,7 @@ def get_year_from_path(path):
         return None
 
 
-def scan_files(input_dir):
+def scan_files(input_dir, output_dir):
     media_files = {}
     json_files = {}
 
@@ -125,7 +125,11 @@ def scan_files(input_dir):
                 if path.stem not in media_files[year]:
                     media_files[year][path.stem] = {"path": path}
                 else:
-                    raise Exception(f"Duplicate media file for {path}")
+                    # raise Exception(f"Duplicate media file for {path}")
+                    duplicates_path = output_dir / "duplicates"
+                    os.makedirs(duplicates_path, exist_ok=True)
+                    shutil.copy2(path.with_name(f"{year}_{path.name}"), duplicates_path)
+
             elif path.suffix.lower() == ".json":
                 media_name = get_name_from_json_path(path)
                 if year not in json_files:
@@ -133,7 +137,10 @@ def scan_files(input_dir):
                 if media_name not in json_files[year]:
                     json_files[year][media_name] = path
                 else:
-                    raise Exception(f"Duplicate JSON file for {media_name}: {path}")
+                    # raise Exception(f"Duplicate JSON file for {media_name}: {path}")
+                    duplicates_path = output_dir / "duplicates" / "metadata"
+                    os.makedirs(duplicates_path, exist_ok=True)
+                    shutil.copy2(path.with_name(f"{year}_{path.name}"), duplicates_path)
 
     # match json files with media files
     res = []
@@ -200,7 +207,7 @@ def main(input_dir, output_dir):
     os.makedirs(output_dir / "metadata", exist_ok=True)
 
     logger.info(f"Scanning folders under: {input_dir}\n")
-    media_files = scan_files(input_dir)
+    media_files = scan_files(input_dir, output_dir)
 
     # process files one by one
     files_count = len(media_files)
