@@ -146,7 +146,7 @@ def scan_files(input_dir, output_dir):
     res = []
     for year in media_files:
         for media_name in media_files[year]:
-            media_file_data = media_files[media_name]
+            media_file_data = media_files[year][media_name]
             media_name_match = media_file_data['path'].name[:46]
             try:
                 media_file_data["json_path"] = json_files[year][media_name_match]
