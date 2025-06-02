@@ -128,7 +128,7 @@ def scan_files(input_dir, output_dir):
                     # raise Exception(f"Duplicate media file for {path}")
                     duplicates_path = output_dir / "duplicates"
                     os.makedirs(duplicates_path, exist_ok=True)
-                    shutil.copy2(path.with_name(f"{year}_{path.name}"), duplicates_path)
+                    shutil.copy2(path, duplicates_path / f"{year}_{path.name}")
 
             elif path.suffix.lower() == ".json":
                 media_name = get_name_from_json_path(path)
@@ -140,7 +140,7 @@ def scan_files(input_dir, output_dir):
                     # raise Exception(f"Duplicate JSON file for {media_name}: {path}")
                     duplicates_path = output_dir / "duplicates" / "metadata"
                     os.makedirs(duplicates_path, exist_ok=True)
-                    shutil.copy2(path.with_name(f"{year}_{path.name}"), duplicates_path)
+                    shutil.copy2(path, duplicates_path / f"{year}_{path.name}")
 
     # match json files with media files
     res = []
