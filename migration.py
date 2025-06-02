@@ -11,7 +11,32 @@ from logger import get_logger
 logger = get_logger()
 
 MEDIA_EXTS = {'.jpg', '.jpeg', '.png', '.heic', '.mov', '.mp4'}
-JSON_SUFFIXES = [".supplemental-metadata.json", ".suppl.json"]
+JSON_SUFFIXES = [
+    '.supplemental-metadata.json', 
+    '.supplemental-metadat.json', 
+    '.supplemental-metada.json', 
+    '.supplemental-metad.json', 
+    '.supplemental-meta.json', 
+    '.supplemental-met.json', 
+    '.supplemental-me.json', 
+    '.supplemental-m.json', 
+    '.supplemental-.json', 
+    '.supplemental.json', 
+    '.supplementa.json', 
+    '.supplement.json', 
+    '.supplemen.json', 
+    '.suppleme.json', 
+    '.supplem.json', 
+    '.supple.json', 
+    '.suppl.json',
+    '.supp.json',
+    '.sup.json',
+    '.su.json',
+    '.s.json',
+    '..json',
+    '.json',
+]
+DEFAULT_JSON_SUF = '.suppl.json',
 
 
 def get_json_name_from_media_name(name):
@@ -24,7 +49,7 @@ def get_json_name_from_media_name(name):
         clean_name = name.replace(ugly_suffix, "")
         return clean_name + f".suppl{ugly_suffix}.json"
     else:
-        return name + JSON_SUFFIXES[-1]
+        return name + DEFAULT_JSON_SUF
 
 
 def rename_file(f_data, new_name):
@@ -76,6 +101,15 @@ def get_name_from_json_path(json_path):
         return name[:name.rfind('.')]
 
 
+def get_year_from_path(path):
+    parent_name = path.parent.name
+    find_year = re.findall(r'.*[^0-9]+([0-9]{4})', parent_name)
+    if find_year:
+        return find_year[0]
+    else:
+        return None
+
+
 def scan_files(input_dir):
     media_files = {}
     json_files = {}
@@ -84,20 +118,35 @@ def scan_files(input_dir):
     for root, _, files in os.walk(input_dir):
         for file in files:
             path = Path(root) / file
+            year = get_year_from_path(path)
             if path.suffix.lower() in MEDIA_EXTS:
-                media_files[path.stem] = {"path": path}
+                if year not in media_files:
+                    media_files[year] = {}
+                if path.stem not in media_files[year]:
+                    media_files[year][path.stem] = {"path": path}
+                else:
+                    raise Exception(f"Duplicate media file for {path}")
             elif path.suffix.lower() == ".json":
                 media_name = get_name_from_json_path(path)
-                json_files[media_name] = path
+                if year not in json_files:
+                    json_files[year] = {}
+                if media_name not in json_files[year]:
+                    json_files[year][media_name] = path
+                else:
+                    raise Exception(f"Duplicate JSON file for {media_name}: {path}")
 
     # match json files with media files
     res = []
-    for media_name in media_files:
-        media_file_data = media_files[media_name]
-        if media_name in json_files:
-            media_file_data["json_path"] = json_files[media_name]
-        res.append(media_file_data)
-
+    for year in media_files:
+        for media_name in media_files[year]:
+            media_file_data = media_files[media_name]
+            media_name_match = media_file_data['path'].name[:46]
+            try:
+                media_file_data["json_path"] = json_files[year][media_name_match]
+                del json_files[year][media_name]
+            except KeyError:
+                raise KeyError(f"No metadata to apply to {media_file_data['path']}")
+            res.append(media_file_data)
     return res
 
 
